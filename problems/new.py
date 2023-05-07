@@ -1,42 +1,61 @@
 import tsplib95
-import math
 import random
-
-# Cargar los datos del problema CVRP
-problem = tsplib95.load("gil262.vrp")
-# Obtener el número de nodos
-num_nodes = problem.dimension
-# Obtener las coordenadas de cada nodo
-coord = problem.node_coords
-# Obtener la capacidad del vehículo
-vehicle_capacity = problem.capacity
-# Obtener la demanda de cada cliente
-demand = problem.demands
+import math
+import numpy as np
+import sys
 
 
+def loadProblem(problem):
+    #F Funcion que reescribe en memoria el problema
+    # Obtener información del problema
+    num_nodes = problem.dimension # Número de nodos, incluyendo el depósito
+    vehicle_capacity = problem.capacity # Capacidad del vehículo
+    coordinates = problem.node_coords # Coordenadas de cada nodo
+    demand = problem.demands # Demanda de cada cliente, si aplica
+    # Obtener las coordenadas de los nodos
+    node_coords = coordinates
+    # Calcular la matriz de distancia euclidiana
+    num_nodes = len(node_coords)
+    # se crea una matriz de distancias a todos los nodos 
+    distance_matrix = np.zeros((num_nodes, num_nodes))
 
+    # matriz de distancias A - B
+    for i in range(1,num_nodes):
+        for j in range(1,num_nodes):
+            if i != j:
+                try : 
+                    distance_matrix[i][j] = np.linalg.norm(np.array(node_coords[i]) - np.array(node_coords[j]))
+                except KeyError:
+                    print('There was an error on the distance matrix')
+    
+def dist(n1,n2):
+    # distancia ecludieana entre 2 nodos
+    C = coordinates[n1]
+    x1,y1 = C[0],C[1]
+    C2 = coordinates[n2 + 1]
+    x2,y2 = C2[0],C2[1]
+    return math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
-# Función para calcular la distancia entre dos nodos
-def distance(node1, node2):
-    x1, y1 = coord[node1]
-    x2, y2 = coord[node2]
-    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-
-# Función para calcular el costo de una ruta
 def route_cost(route):
+    # Función para calcular el costo de una ruta
     cost = 0
-    for i in range(len(route) - 1):
-        cost += distance(route[i], route[i+1])
+    pathlenght = len(route) - 1 
+    for i in range(1,pathlenght):
+        cost += dist(route[i], route[i+1])
     return cost
 
+def solution_cost(solution):
+    # Función para calcular el costo total de una solución
+    cost = 0
+    for route in solution:
+        cost += route_cost(route)
+    return cost
 
-
-# Función para generar una solución inicial aleatoria
 def initial_solution():
+    # Función para generar una solución inicial aleatoria
     # Crear una lista de clientes y mezclarla aleatoriamente
     customers = list(range(1, num_nodes))
     random.shuffle(customers)
-    
     # Dividir la lista de clientes en rutas que respeten la capacidad del vehículo
     solution = []
     while len(customers) > 0:
@@ -50,59 +69,104 @@ def initial_solution():
         solution.append(route)
         for customer in route[1:-1]:
             customers.remove(customer)
-    
     return solution
 
+def calculate_cost(best_solution, distance_matrix):
+    # Funcion que calcula el costo de la solucion actual en base a la matriz de distancias
+    cost = 0
+    max = len(best_solution) - 1
+    for route in best_solution:
+        for i in range(1,max):
+            try:
+                node1 = route[ i ]
+                node2 = route[ i + 1]
+                cost += distance_matrix[node1][node2]
+            except:
+                KeyError
+    return cost
 
+def ShowProblem():
+    # Funcion para mostrar las caracteristicas del problema After Load
+    prm = f'''Número de nodos, incluyendo el depósito:  {num_nodes}\n
+        Capacidad del vehículo {vehicle_capacity} \n
+    '''
+    print(prm)
+    
 
-# Definir una temperatura inicial y un factor de enfriamiento
-temperature = 100
-cooling_factor = 0.99
+    
+def Sim(temperature, cooling_factor ,current_solution):
+    while temperature > 1e-6:
+        # Generar una solución vecina haciendo una pequeña modificación a la solución actual
+        neighbor_solution = list(current_solution)
+        route1 = random.randint(0, len(current_solution) -1)
+        route2 = random.randint(0, len(current_solution) -1)
+        customer1 = random.choice(current_solution[route1][1:-1])
+        customer2 = random.choice(current_solution[route2][1:-1])
+        neighbor_solution[route1][neighbor_solution[route1].index(customer1)] = customer2
+        neighbor_solution[route2][neighbor_solution[route2].index(customer2)] = customer1
+        # Calcular la diferencia de costo entre la solución actual y la vecina
+        current_cost = solution_cost(current_solution)
+        neighbor_cost = solution_cost(neighbor_solution)
+        cost_difference = neighbor_cost - current_cost
 
-# Generar una solución inicial aleatoria que satisfaga las restricciones del problema
-current_solution = initial_solution()
+        # Si la vecina es mejor, aceptarla como la nueva solución actual
+        if cost_difference < 0:
+            current_solution = neighbor_solution
+        #Si la vecina es peor, aceptarla con una probabilidad determinada por la temperatura actual y la diferencia de costo, se puede implementar de la siguiente manera:
 
-# Repetir hasta que se alcance la condición de parada
-while temperature > 1e-6:
-    # Generar una solución vecina haciendo una pequeña modificación a la solución actual
-    neighbor_solution = list(current_solution)
-    route1 = random.randint(0, len(current_solution)-1)
-    route2 = random.randint(0, len(current_solution)-1)
-    customer1 = random.choice(current_solution[route1][1:-1])
-    customer2 = random.choice(current_solution[route2][1:-1])
-    neighbor_solution[route1].remove(customer1)
-    neighbor_solution[route2].remove(customer2)
-    if len(neighbor_solution[route1]) == 1:
-        neighbor_solution.remove(neighbor_solution[route1])
-    if len(neighbor_solution[route2]) == 1:
-        neighbor_solution.remove(neighbor_solution[route2])
-        neighbor_solution[random.randint(0, len(neighbor_solution)-1)].insert(random.randint(1, len(neighbor_solution[route1])-1), customer2)
-        neighbor_solution[random.randint(0, len(neighbor_solution)-1)].insert(random.randint(1, len(neighbor_solution[route2])-1), customer1)
+        #Calcular la diferencia de costo entre la solución actual y la vecina
+        delta_cost = calculate_cost(neighbor_solution, distance_matrix) - calculate_cost(current_solution, distance_matrix)
 
-    # Calcular la diferencia de costo entre la solución actual y la vecina
-    current_cost = sum(distance_matrix[current_solution[i][-1]][current_solution[i+1][0]] for i in range(len(current_solution)-1))
-    current_cost += sum(distance_matrix[current_solution[i][-1]][current_solution[i+1][1]] for i in range(len(current_solution)-1))
-    current_cost += sum(distance_matrix[0][current_solution[i][1]] for i in range(len(current_solution)))
-    neighbor_cost = sum(distance_matrix[neighbor_solution[i][-1]][neighbor_solution[i+1][0]] for i in range(len(neighbor_solution)-1))
-    neighbor_cost += sum(distance_matrix[neighbor_solution[i][-1]][neighbor_solution[i+1][1]] for i in range(len(neighbor_solution)-1))
-    neighbor_cost += sum(distance_matrix[0][neighbor_solution[i][1]] for i in range(len(neighbor_solution)))
-    cost_difference = neighbor_cost - current_cost
-
-    # Si la vecina es mejor, aceptarla como la nueva solución actual
-    if cost_difference < 0:
-        current_solution = neighbor_solution
-    # Si la vecina es peor, aceptarla con una probabilidad determinada por la temperatura actual y la diferencia de costo
-    else:
-        acceptance_probability = math.exp(-cost_difference/temperature)
+        #Si la vecina es mejor, aceptarla como la nueva solución actual
+        if delta_cost < 0:
+            current_solution = neighbor_solution
+        #Si la vecina es peor, aceptarla con una probabilidad determinada por la temperatura actual y la diferencia de costo
+        else:
+            acceptance_probability = math.exp(-delta_cost / temperature)
         if random.random() < acceptance_probability:
             current_solution = neighbor_solution
-    # Reducir la temperatura según el factor de enfriamiento
-    temperature *= cooling_factor
+        #factor de enfriamiento
 
-    # Devolver la mejor solución encontrada y su costo
-    best_solution = current_solution
-    best_cost = sum(distance_matrix[best_solution[i][-1]][best_solution[i+1][0]] for i in range(len(best_solution)-1))
-    best_cost += sum(distance_matrix[best_solution[i][-1]][best_solution[i+1][1]] for i in range(len(best_solution)-1))
-    best_cost += sum(distance_matrix[0][best_solution[i][1]] for i in range(len(best_solution)))
-    print("Mejor solución encontrada: ", best_solution)
-    print("Costo de la mejor solución encontrada: ", best_cost)
+        temperature *= cooling_factor
+        #Obtener la mejor solución encontrada y su costo
+        best_solution = current_solution
+
+    best_cost = calculate_cost(best_solution, distance_matrix)
+    print("Mejor solución encontrada:")
+    print(best_solution)
+    print("Costo de la mejor solución encontrada:", best_cost)
+
+
+if __name__ == '__main__':
+    # Cargar el problema CVRP desde un archivo
+    if len(sys.argv) != 2:
+        print(f"usage: python {sys.argv[0]} fname") #espific .vrp file
+        exit(1)
+    elif len(sys.argv) == 2: 
+        problem = tsplib95.load(sys.argv[1])
+    else:# por si no lee
+        problem = tsplib95.load("eil22.vrp")
+
+    #print( sys.argv[0] ,problem)
+    # Obtener información del problema
+    num_nodes = problem.dimension # Número de nodos, incluyendo el depósito
+    vehicle_capacity = problem.capacity # Capacidad del vehículo
+    coordinates = problem.node_coords # Coordenadas de cada nodo
+    demand = problem.demands # Demanda de cada cliente, si aplica
+    # Obtener las coordenadas de los nodos
+    node_coords = coordinates
+    # Calcular la matriz de distancia euclidiana
+    num_nodes = len(node_coords)
+    # se crea una matriz de distancias a todos los nodos 
+    distance_matrix = np.zeros((num_nodes, num_nodes))
+
+    # matriz de distancias A - B
+    for i in range(1,num_nodes):
+        for j in range(1,num_nodes):
+            if i != j:
+                try : 
+                    distance_matrix[i][j] = np.linalg.norm(np.array(node_coords[i]) - np.array(node_coords[j]))
+                except KeyError:
+                    print('There was an error on the distance matrix')
+    ShowProblem()           
+    Sim(temperature= 100,cooling_factor=0.99,current_solution=initial_solution())
